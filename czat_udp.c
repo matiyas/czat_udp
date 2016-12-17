@@ -26,7 +26,7 @@ int main(int argc, char **argv) {
     struct in_addr *adres_hosta;
     struct sockaddr_in adres;
     struct sockaddr_in adres_nadawcy;
-    struct sigaction sa;
+    struct sigaction sa_int;
     socklen_t addrlen = sizeof(adres_nadawcy);
 
     if(argc != 2) {
@@ -35,10 +35,10 @@ int main(int argc, char **argv) {
     }
 
     /* Obsługa sygnału SIGINT */
-    sa.sa_handler = obsluga;
-    sigemptyset(&sa.sa_mask);
-    sa.sa_flags = 0;
-    sigaction(SIGINT, &sa, 0);
+    sa_int.sa_handler = obsluga;
+    sigemptyset(&sa_int.sa_mask);
+    sa_int.sa_flags = 0;
+    sigaction(SIGINT, &sa_int, 0);
 
     /* Tworzenie gniazda dla IPv4/UDP */
     if((sockfd = socket(AF_INET, SOCK_DGRAM, 0)) == -1) {
@@ -60,10 +60,19 @@ int main(int argc, char **argv) {
     /* Proces macierzysty wysyła wiadomości */
     if(pid > 0) {
         /* Pobranie adresu hosta na podstawie nazwy */
-        nazwa_hosta = gethostbyname(argv[1]);
+        if((nazwa_hosta = gethostbyname(argv[1])) == NULL){
+            perror("gethostbyname");
+            kill(pid, SIGINT);
+            exit(-1);
+        }
         adres_hosta = (struct in_addr *)nazwa_hosta->h_addr;
 
-        adres.sin_addr.s_addr = inet_addr(inet_ntoa(*adres_hosta));     /* Ustawienie adresu odbiorcy */
+        /* Ustawienie adresu odbiorcy */
+        if((adres.sin_addr.s_addr = inet_addr(inet_ntoa(*adres_hosta))) == -1) {
+            perror("Ustawianie adresu odbiorcy");
+            kill(pid, SIGINT);
+            exit(-1);
+        }
         
         while(1) {
             bzero(tresc, sizeof(tresc));            /* Czyszczenie bufora */
@@ -85,8 +94,9 @@ int main(int argc, char **argv) {
     }
 
     /* Potomek odbiera wiadomości */
-    else { 
-        adres.sin_addr.s_addr = htonl(INADDR_ANY);
+    else {
+       /* Odbieranie wiadomości od każdego */         
+       adres.sin_addr.s_addr = htonl(INADDR_ANY);
 
         /* Przywiązanie nazwy do gniazda */
         if(bind(sockfd, (struct sockaddr *)&adres, sizeof(adres)) == -1) {
@@ -103,8 +113,10 @@ int main(int argc, char **argv) {
                 exit(-1);
             }
         
+            /* Drukowanie wiadomości */
             printf("[%s] %s", inet_ntoa(adres_nadawcy.sin_addr), tresc);
             
+            /* Czyszczenie buforów */
             bzero(&adres_nadawcy, sizeof(adres_nadawcy));
             bzero(&tresc, sizeof(tresc));
         }
