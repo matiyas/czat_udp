@@ -19,13 +19,6 @@ void obsluga(int sygnal) {
     exit(0); 
 }
 
-void obs_usr1(int sygnal) {
-    int s_time;
-    s_time = sleep(2);
-    if(s_time == 0)
-        printf("[BŁĄD]\n");
-}
-
 int main(int argc, char **argv) {
     int pid;
     char tresc[255];
@@ -34,7 +27,6 @@ int main(int argc, char **argv) {
     struct sockaddr_in adres;
     struct sockaddr_in adres_nadawcy;
     struct sigaction sa_int;
-    struct sigaction sa_usr1;
     socklen_t addrlen = sizeof(adres_nadawcy);
 
     if(argc != 2) {
@@ -93,24 +85,18 @@ int main(int argc, char **argv) {
             }
 
             /* Wysyłanie wiadomości */
-            if(sendto(sockfd, tresc, sizeof(tresc), 0, (struct sockaddr *)&adres, sizeof(adres)) == -1) {
+            if(sendto(sockfd, tresc, sizeof(tresc), MSG_CONFIRM, (struct sockaddr *)&adres, sizeof(adres)) == -1) {
                 perror("Wysyłanie wiadomości");
                 kill(pid, SIGINT);
                 exit(-1);
             }
             
             /* Wysłanie sygnału do potomka oznaczającego wysłanie wiadomości */
-           /* kill(pid, SIGUSR1);*/
         }
     }
 
     /* Potomek odbiera wiadomości */
     else {
-        /* Zmiana działania sygnału SIGUSR1 */
-       /* sa_usr1.sa_flags = 0;
-        sigemptyset(&sa_usr1.sa_mask);
-        sa_usr1.sa_handler = obs_usr1;*/
-
         /* Odbieranie wiadomości od każdego hosta */         
         adres.sin_addr.s_addr = htonl(INADDR_ANY);
 
@@ -132,15 +118,6 @@ int main(int argc, char **argv) {
             /* Drukowanie wiadomości */
             printf("[%s] %s", inet_ntoa(adres_nadawcy.sin_addr), tresc);
            
-            /* ############################################################################################ */
-            /* Wysyłanie wiadomości */
-            if(sendto(sockfd, "[OK]", sizeof("[OK]"), 0, (struct sockaddr *)&adres_nadawcy, sizeof(adres_nadawcy)) == -1) {
-                perror("Wysyłanie wiadomości");
-                kill(pid, SIGINT);
-                exit(-1);
-            }
- 
-            /* ########################################################################################### */
             /* Czyszczenie buforów */
             bzero(&adres_nadawcy, sizeof(adres_nadawcy));
             bzero(&tresc, sizeof(tresc));
