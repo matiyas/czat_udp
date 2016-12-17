@@ -1,3 +1,4 @@
+#define _WITH_GETLINE
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
@@ -20,8 +21,9 @@ void obsluga(int sygnal) {
 }
 
 int main(int argc, char **argv) {
-    int i, pid, rozmiar, poczatek=1;
+    int i, pid, poczatek=1;
     size_t n=0;
+    ssize_t rozmiar;
     char  *buf=NULL, dane[10];
     struct hostent *nazwa_hosta;
     struct in_addr *adres_hosta;
@@ -76,7 +78,7 @@ int main(int argc, char **argv) {
         }
         
         while(1) {
-            rozmiar = getline(&buf, &n, stdin);     /* Pobieranie wiadomości od użytkownika */
+            rozmiar = getline(&buf, &n, stdin);     /* Pobieranie wiadomomsci od uzytkownika */
             
             /* Warunek kończący działanie programu */
             if(strcmp(buf, "koniec\n") == 0) {
@@ -91,7 +93,7 @@ int main(int argc, char **argv) {
                 strncpy(dane, buf, sizeof(dane));     /* Kopiowanie maksymalnie 254 znakow do przesyłanej tablicy */
                 
                 /* Wysłanie części wiadomości */
-                if(sendto(sockfd, dane, sizeof(dane), MSG_CONFIRM, (struct sockaddr *)&adres, sizeof(adres)) == -1) {
+                if(sendto(sockfd, dane, sizeof(dane), 0, (struct sockaddr *)&adres, sizeof(adres)) == -1) {
                     perror("Wysyłanie wiadomości");
                     kill(pid, SIGINT);
                     exit(-1);
