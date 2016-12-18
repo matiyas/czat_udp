@@ -14,17 +14,17 @@
 
 int sockfd;
 
-void obsluga(int sygnal) {
-    close(sockfd);
+void koniec(int sygnal) {
     wait(0);
-    exit(0); 
+    close(sockfd);
+    exit(-1); 
 }
 
 int main(int argc, char **argv) {
     int i, pid, poczatek=1;
     size_t n=0;
     ssize_t rozmiar;
-    char  *buf=NULL, dane[10];
+    char  *buf=NULL, dane[255];
     struct hostent *nazwa_hosta;
     struct in_addr *adres_hosta;
     struct sockaddr_in adres;
@@ -38,7 +38,7 @@ int main(int argc, char **argv) {
     }
 
     /* Obsługa sygnału SIGINT */
-    sa_int.sa_handler = obsluga;
+    sa_int.sa_handler = koniec;
     sigemptyset(&sa_int.sa_mask);
     sa_int.sa_flags = 0;
     sigaction(SIGINT, &sa_int, 0);
@@ -57,6 +57,7 @@ int main(int argc, char **argv) {
     /* Tworzenie procesu potomnego */
     if((pid = fork()) == -1) {
         perror("Tworzenie procesu potomnego");
+        close(sockfd);
         exit(-1);
     }
     
@@ -66,7 +67,7 @@ int main(int argc, char **argv) {
         if((nazwa_hosta = gethostbyname(argv[1])) == NULL){
             perror("gethostbyname");
             kill(pid, SIGINT);
-            exit(-1);
+            koniec(SIGINT);
         }
         adres_hosta = (struct in_addr *)nazwa_hosta->h_addr;
 
@@ -74,31 +75,44 @@ int main(int argc, char **argv) {
         if((adres.sin_addr.s_addr = inet_addr(inet_ntoa(*adres_hosta))) == -1) {
             perror("Ustawianie adresu odbiorcy");
             kill(pid, SIGINT);
-            exit(-1);
+            koniec(SIGINT);
         }
         
         while(1) {
-            rozmiar = getline(&buf, &n, stdin);     /* Pobieranie wiadomomsci od uzytkownika */
+            /* Pobieranie wiadomomsci od uzytkownika */
+            if((rozmiar = getline(&buf, &n, stdin)) == -1) {
+                perror("Pobieranie wiadomości");
+                kill(pid, SIGINT);
+                koniec(SIGINT);
+            }
             
             /* Warunek kończący działanie programu */
             if(strcmp(buf, "koniec\n") == 0) {
-                kill(pid, SIGINT);  /* Zakończ działanie potomka */
-                obsluga(SIGINT);    /* Zakończ działanie procesu macierzystego */
+                kill(pid, SIGINT);
+                wait(0);
+                close(sockfd);
+                exit(0);
             }
 
 
             /*  Wysyłanie wiadomości w częściach po 255 znaków każda */
-            for(i=0; i<rozmiar; i=i+10) {
+            for(i=0; i<rozmiar; i=i+255) {
                 bzero(dane, sizeof(dane));              /* Czyszczenie bufora */
-                strncpy(dane, buf, sizeof(dane));     /* Kopiowanie maksymalnie 254 znakow do przesyłanej tablicy */
+                
+                /* Kopiowanie maksymalnie 255 znakow do przesyłanej tablicy */
+                if(strncpy(dane, buf, sizeof(dane)) == NULL) {
+                    perror("Kopiowanie danych");
+                    kill(pid, SIGINT);
+                    koniec(SIGINT); 
+                };     
                 
                 /* Wysłanie części wiadomości */
                 if(sendto(sockfd, dane, sizeof(dane), 0, (struct sockaddr *)&adres, sizeof(adres)) == -1) {
                     perror("Wysyłanie wiadomości");
                     kill(pid, SIGINT);
-                    exit(-1);
+                    koniec(SIGINT);
                 }
-                buf += 10;   /* Przesunięcie początku bufora */
+                buf += 255;   /* Przesunięcie początku bufora */
             }
         }
     }
@@ -112,7 +126,7 @@ int main(int argc, char **argv) {
         if(bind(sockfd, (struct sockaddr *)&adres, sizeof(adres)) == -1) {
             perror("Podpinanie gniazda");
             kill(pid, SIGINT);
-            exit(-1);
+            exit(-1); 
         }
         
         while(1) {
@@ -123,13 +137,15 @@ int main(int argc, char **argv) {
                 exit(-1);
             }
         
-            /* Drukowanie wiadomości */
+            /* Jeśli odebrano pierwszą część wiadomości to wyświetl adres nadawcy */
             if(poczatek == 1) {
                 printf("[%s] ", inet_ntoa(adres_nadawcy.sin_addr));
                 poczatek = 0;
             }
 
-            printf("%s", dane);
+            printf("%s", dane);     /* Drukowanie części wiadomości */
+ 
+            /* Znak nowego wiersza oznacza koniec wiadomości */
             if(dane[strlen(dane)-1] == '\n')
                 poczatek = 1;
            
