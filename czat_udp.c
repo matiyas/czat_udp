@@ -20,8 +20,9 @@ void obsluga(int sygnal) {
 }
 
 int main(int argc, char **argv) {
-    int pid;
-    char tresc[255];
+    int i, pid, rozmiar, poczatek=1;
+    size_t n=0;
+    char  *buf=NULL, dane[10];
     struct hostent *nazwa_hosta;
     struct in_addr *adres_hosta;
     struct sockaddr_in adres;
@@ -75,23 +76,28 @@ int main(int argc, char **argv) {
         }
         
         while(1) {
-            bzero(tresc, sizeof(tresc));            /* Czyszczenie bufora */
-            fgets(tresc, sizeof(tresc), stdin);     /* Pobieranie wiadomości od użytkownika */
+            rozmiar = getline(&buf, &n, stdin);     /* Pobieranie wiadomości od użytkownika */
             
             /* Warunek kończący działanie programu */
-            if(strcmp(tresc, "koniec\n") == 0) {
+            if(strcmp(buf, "koniec\n") == 0) {
                 kill(pid, SIGINT);  /* Zakończ działanie potomka */
                 obsluga(SIGINT);    /* Zakończ działanie procesu macierzystego */
             }
 
-            /* Wysyłanie wiadomości */
-            if(sendto(sockfd, tresc, sizeof(tresc), MSG_CONFIRM, (struct sockaddr *)&adres, sizeof(adres)) == -1) {
-                perror("Wysyłanie wiadomości");
-                kill(pid, SIGINT);
-                exit(-1);
+
+            /*  Wysyłanie wiadomości w częściach po 255 znaków każda */
+            for(i=0; i<rozmiar; i=i+10) {
+                bzero(dane, sizeof(dane));              /* Czyszczenie bufora */
+                strncpy(dane, buf, sizeof(dane));     /* Kopiowanie maksymalnie 254 znakow do przesyłanej tablicy */
+                
+                /* Wysłanie części wiadomości */
+                if(sendto(sockfd, dane, sizeof(dane), MSG_CONFIRM, (struct sockaddr *)&adres, sizeof(adres)) == -1) {
+                    perror("Wysyłanie wiadomości");
+                    kill(pid, SIGINT);
+                    exit(-1);
+                }
+                buf += 10;   /* Przesunięcie początku bufora */
             }
-            
-            /* Wysłanie sygnału do potomka oznaczającego wysłanie wiadomości */
         }
     }
 
@@ -109,18 +115,25 @@ int main(int argc, char **argv) {
         
         while(1) {
             /* Odbieranie wiadomości */
-            if(recvfrom(sockfd, &tresc, sizeof(tresc), 0, (struct sockaddr *)&adres_nadawcy, &addrlen) == -1) {
+            if(recvfrom(sockfd, &dane, sizeof(dane), 0, (struct sockaddr *)&adres_nadawcy, &addrlen) == -1) {
                 perror("Odbieranie wiadomości");
                 kill(pid, SIGINT);
                 exit(-1);
             }
         
             /* Drukowanie wiadomości */
-            printf("[%s] %s", inet_ntoa(adres_nadawcy.sin_addr), tresc);
+            if(poczatek == 1) {
+                printf("[%s] ", inet_ntoa(adres_nadawcy.sin_addr));
+                poczatek = 0;
+            }
+
+            printf("%s", dane);
+            if(dane[strlen(dane)-1] == '\n')
+                poczatek = 1;
            
             /* Czyszczenie buforów */
             bzero(&adres_nadawcy, sizeof(adres_nadawcy));
-            bzero(&tresc, sizeof(tresc));
+            bzero(&dane, sizeof(dane));
         }
     }
 }
